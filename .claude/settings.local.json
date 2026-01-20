@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(powershell -Command \"\\(Get-Content content.js\\) | Where-Object { $_-notmatch ''console\\\\.log'' } | Set-Content content_clean.js\")",
+      "Bash(powershell -Command \"$content = Get-Content content.js -Raw; $content = $content -replace ''\\(?m\\)^.*console\\\\.log.*$\\\\r?\\\\n?'', ''''; Set-Content content_clean.js $content\")",
+      "Bash(node:*)",
+      "Bash(del cleanup.js)"
+    ]
+  }
+}
