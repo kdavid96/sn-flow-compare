@@ -177,7 +177,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     for (const selector of FLOW_CONTAINER_SELECTORS) {
       const container = document.querySelector(selector);
       if (container) {
-        console.log(`[SN Flow Compare] Found flow container with selector: ${selector}`);
         return container;
       }
     }
@@ -190,24 +189,20 @@ console.log('[SN Flow Compare] Content script file loaded');
     const container = findFlowContainer();
     let elements = [];
 
-    console.log(`[SN Flow Compare] Searching in container:`, container.id || container.tagName);
 
     // For ServiceNow Flow Designer, collect trigger + steps separately
     const triggers = container.querySelectorAll('.trigger-section');
     const stepContainers = container.querySelectorAll('.instance-component-stage-container');
 
-    console.log(`[SN Flow Compare] Found ${triggers.length} triggers, ${stepContainers.length} step containers`);
 
     if (triggers.length > 0 || stepContainers.length > 0) {
       elements = [...triggers, ...stepContainers];
-      console.log(`[SN Flow Compare] Using SN Flow Designer selectors: ${elements.length} total elements`);
     } else {
       // Fallback: try other selectors
       for (const selector of STEP_SELECTORS) {
         try {
           const found = container.querySelectorAll(selector);
           if (found.length > 0) {
-            console.log(`[SN Flow Compare] Found ${found.length} elements with selector: ${selector}`);
             elements = [...found];
             break;
           }
@@ -219,9 +214,7 @@ console.log('[SN Flow Compare] Content script file loaded');
 
     // If still no elements found, try broader discovery
     if (elements.length === 0) {
-      console.log('[SN Flow Compare] No steps found, trying discovery...');
       const candidates = container.querySelectorAll('[class*="container"], [class*="action"], [class*="trigger"], [class*="step"]');
-      console.log(`[SN Flow Compare] Discovery found ${candidates.length} candidates`);
 
       [...candidates].slice(0, 10).forEach((el, i) => {
         console.log(`[SN Flow Compare] Candidate ${i}:`, el.tagName, el.className.substring(0, 100));
@@ -229,9 +222,6 @@ console.log('[SN Flow Compare] Content script file loaded');
 
       elements = [...candidates];
     }
-
-    // Log what we found before filtering
-    console.log(`[SN Flow Compare] Before filtering: ${elements.length} elements`);
 
     // Don't filter by dimensions - background tabs may not render properly
     // Just filter out obviously wrong elements by class name
@@ -248,7 +238,6 @@ console.log('[SN Flow Compare] Content script file loaded');
       return true;
     });
 
-    console.log(`[SN Flow Compare] After filtering: ${elements.length} step elements`);
     return elements;
   }
 
@@ -315,8 +304,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     const triggers = [...container.querySelectorAll('.trigger-section')];
     const totalItems = triggers.length + stepContainers.length;
 
-    console.log(`[SN Flow Compare] Extracting ${triggers.length} triggers and ${stepContainers.length} steps one by one...`);
-
     // Show loading overlay
     if (showOverlay) {
       showLoadingOverlay('Extracting Flow Steps');
@@ -369,13 +356,11 @@ console.log('[SN Flow Compare] Content script file loaded');
         await new Promise(resolve => setTimeout(resolve, 200));
 
         if (instanceOpener) {
-          console.log(`[SN Flow Compare] Clicking instanceOpener for step ${i + 1}`);
           instanceOpener.scrollIntoView({ behavior: 'instant', block: 'center' });
           instanceOpener.click();
           instanceOpener.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         } else {
           // Fallback: click the step container itself
-          console.log(`[SN Flow Compare] No instanceOpener found, clicking container`);
           step.click();
           step.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         }
@@ -398,13 +383,11 @@ console.log('[SN Flow Compare] Content script file loaded');
           const panelClone = detailsPanel.cloneNode(true);
           stepData.html += '<div class="snfc-details-panel">' + panelClone.innerHTML + '</div>';
           stepData.detailsHtml = panelClone.innerHTML;
-          console.log(`[SN Flow Compare] Captured details panel for step ${i + 1}`);
         }
 
         stepData.order = extractedSteps.length + 1;
         extractedSteps.push(stepData);
 
-        console.log(`[SN Flow Compare] Extracted step ${i + 1}/${stepContainers.length}: ${stepData.name || 'unnamed'}`);
 
         // Small delay before clicking next step
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -426,8 +409,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     validSteps.forEach((step, idx) => {
       step.order = idx + 1;
     });
-
-    console.log(`[SN Flow Compare] Extracted ${validSteps.length} valid steps`);
 
     // Hide loading overlay
     if (showOverlay) {
@@ -479,7 +460,6 @@ console.log('[SN Flow Compare] Content script file loaded');
       step.order = idx + 1;
     });
 
-    console.log(`[SN Flow Compare] Extracted ${validSteps.length} valid steps (filtered from ${steps.length})`);
     return { steps: validSteps, error: null };
   }
 
@@ -627,40 +607,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     });
   }
 
-  // Make authenticated fetch request
-  async function snFetch(url) {
-    const token = await getCSRFToken();
-
-    const headers = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (token) {
-      headers['X-UserToken'] = token;
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        // Don't throw for 401 on discovery queries - just return empty
-        if (response.status === 401 || response.status === 403) {
-          return { result: [] };
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return response.json();
-    } catch (e) {
-      throw e;
-    }
-  }
-
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'openCompare') {
@@ -693,23 +639,16 @@ console.log('[SN Flow Compare] Content script file loaded');
 
     // Handle DOM extraction request (when this page is opened for extraction)
     if (message.action === 'extractDOM') {
-      console.log('[SN Flow Compare] Received extractDOM request');
-      console.log('[SN Flow Compare] Current URL:', window.location.href);
-
       // Check if Flow Designer container exists
       const container = document.querySelector('#app-floweditor');
-      console.log('[SN Flow Compare] #app-floweditor exists:', !!container);
 
       if (container) {
-        console.log('[SN Flow Compare] Container innerHTML length:', container.innerHTML.length);
         const triggers = container.querySelectorAll('.trigger-section');
         const steps = container.querySelectorAll('.instance-component-stage-container');
-        console.log('[SN Flow Compare] Direct query - triggers:', triggers.length, 'steps:', steps.length);
       }
 
       // Extract steps from the current page
       const result = extractAllStepsHTML();
-      console.log('[SN Flow Compare] Extraction result:', result.steps.length, 'steps');
 
       // Send result back to background script
       chrome.runtime.sendMessage({
@@ -734,8 +673,6 @@ console.log('[SN Flow Compare] Content script file loaded');
 
     // Handle DOM extracted response (forwarded from extraction tab)
     if (message.action === 'domExtracted') {
-      console.log(`[SN Flow Compare] Received domExtracted for version ${message.versionSysId}`);
-      console.log(`[SN Flow Compare] Step count: ${message.stepCount}, Error: ${message.error}`);
       if (message.debug) {
         console.log(`[SN Flow Compare] Debug info:`, message.debug);
       }
@@ -1607,8 +1544,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     // Detect workflow type
     workflowType = detectWorkflowType();
 
-    console.log('KD LOG: OPENING COMPARE MODAL')
-
     if (workflowType === WORKFLOW_TYPE.UNKNOWN) {
       showNotification('Please open a Flow Designer flow or Workflow Studio workflow first', 'warning');
       return;
@@ -1669,7 +1604,6 @@ console.log('[SN Flow Compare] Content script file loaded');
       const compareData = window.snfcCompareData;
 
       if (compareData && compareData.currentSteps) {
-        console.log('[SN Flow Compare] Using stored comparison data from sidebar');
         const versionInfo = compareData.compareVersionInfo || {};
 
         // Extract steps one by one (opening each to get full content)
@@ -1791,8 +1725,6 @@ console.log('[SN Flow Compare] Content script file loaded');
 
       } else {
         // No comparison data - just show current page content
-        console.log('[SN Flow Compare] No comparison data, showing current page only');
-
         modal.querySelector('.snfc-column-header-left').innerHTML = `<h3>Current Version</h3>`;
         modal.querySelector('.snfc-column-header-right').innerHTML = `<h3>Historical Version</h3>`;
 
@@ -1987,7 +1919,6 @@ console.log('[SN Flow Compare] Content script file loaded');
     const activated = versions.find(v => v.isActivated);
 
     if (activated) {
-      console.log(`[SN Flow Compare] Found Activated entry at index ${activated.index}: ${activated.timestamp}`);
       lastActivatedVersion = activated;
 
       // Highlight the activated entry
@@ -2182,9 +2113,6 @@ console.log('[SN Flow Compare] Content script file loaded');
       const currentSteps = await extractStepsOneByOne();
       const currentFingerprint = getPageContentFingerprint();
 
-      console.log(`[SN Flow Compare] Current page has ${currentSteps.steps.length} steps`);
-      console.log(`[SN Flow Compare] Current fingerprint: ${currentFingerprint.substring(0, 100)}...`);
-
       // Store current version data
       window.snfcCompareData = {
         currentSteps: currentSteps.steps,
@@ -2194,7 +2122,6 @@ console.log('[SN Flow Compare] Content script file loaded');
       };
 
       // Click the entry to load that version
-      console.log('[SN Flow Compare] Clicking entry to load version...');
       entryElement.click();
 
       // Wait for the version to load (detect actual content change)
@@ -2224,14 +2151,10 @@ console.log('[SN Flow Compare] Content script file loaded');
 
         // Wait for content to actually change
         if (contentChanged && attempts > 2) {
-          console.log('[SN Flow Compare] Content changed, version loaded');
-          console.log(`[SN Flow Compare] New fingerprint: ${currentFingerprint.substring(0, 100)}...`);
-
           // Give a bit more time for full render, then extract steps one by one
           setTimeout(async () => {
             // Extract steps one by one (opening each to get full content)
             const loadedSteps = await extractStepsOneByOne();
-            console.log(`[SN Flow Compare] Historical version has ${loadedSteps.steps.length} steps`);
             // Now we have both versions - show comparison
             if (window.snfcCompareData) {
               showInlineComparison(
@@ -2247,8 +2170,6 @@ console.log('[SN Flow Compare] Content script file loaded');
 
         // Also check if we've waited long enough even without change (maybe same content)
         if (attempts >= 10 && !contentChanged) {
-          console.log('[SN Flow Compare] Content did not change after 5 seconds - versions might be identical');
-
           // Extract steps one by one
           extractStepsOneByOne().then((loadedSteps) => {
             if (window.snfcCompareData) {
@@ -2280,18 +2201,10 @@ console.log('[SN Flow Compare] Content script file loaded');
     // Remove existing comparison panel
     const existing = document.querySelector('.snfc-inline-compare-panel');
     if (existing) existing.remove();
-
-    console.log('[SN Flow Compare] showInlineComparison called');
-    console.log(`[SN Flow Compare] Current (working) version: ${currentSteps.length} steps`);
-    console.log(`[SN Flow Compare] Historical version (${versionInfo.timestamp}): ${comparedSteps.length} steps`);
-
     // Generate diff - comparing current working version against historical version
     // currentSteps = the version you were editing (before clicking history entry)
     // comparedSteps = the historical version (loaded after clicking)
     const diff = compareExtractedSteps(currentSteps, comparedSteps);
-
-    console.log('[SN Flow Compare] Diff summary:', diff.summary);
-
     // Create comparison panel
     const panel = document.createElement('div');
     panel.className = 'snfc-inline-compare-panel';
